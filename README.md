@@ -34,7 +34,7 @@ This Jupyter Notebook serves as an environment for data exploration using the `S
 
 1. Clone the repository:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/eliasfoisner/singlepulse
    cd singlepulse
    ```
 
