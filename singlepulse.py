@@ -375,8 +375,8 @@ class Calibration:
         return self.calibration[isotope]
 
 
-    def reg_plot_2(self, isotope: str, confidence_interval: int = 90):
-        x = self.analyte_mass[isotope]
+    def reg_plot_2(self, isotope: str):
+        x = np.array(self.analyte_mass[isotope]) * 1e15
         y = self.analyte_intensity[isotope]
         plt.figure()
         plt.scatter(x, y, label='Data')
@@ -391,8 +391,9 @@ class Calibration:
         r2 = 1 - ss_res / ss_tot if ss_tot != 0 else 0
         eqn_label = f'Fit: y = {intercept:.2e} + {slope:.2e}x\n$R^2$ = {r2:.3f}'
         plt.plot(x_fit, y_fit, color='red', label=eqn_label)
-        plt.xlabel(f'{isotope} mass (g)')
-        plt.ylabel('Intensity')
+        plt.title(f"{isotope} calibration")
+        plt.xlabel(f'mass (fg)')
+        plt.ylabel('peak area (a.u.)')
         plt.xlim([0, max(x) * 1.1])
         plt.ylim([0, max(y) * 1.1])
         plt.legend()
