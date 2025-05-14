@@ -5,12 +5,10 @@ import scipy as sc
 import seaborn as sns
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
-from plotly_resampler import FigureResampler
+import math
 
 
-def calc_diameter(mass, density, mass_correction: float = 1): # in nm
-    diameter = (3*mass/mass_correction/(4*density*np.pi))**(1/3) * 2 * 1e7
-    return diameter.real
+
 
 
 def extract_string(text: str, first_character: str, second_character: str, right: bool = True):
@@ -54,31 +52,29 @@ def check_nanomodul(file):
         return True
 
 
-class SinglePulse:
+class Measurement:
     """
     The basic concept evolves around two DataFrames self.data and self.peaks which are filled with data when applying methods.
     Methods return the specific calculations in addition to saving the data to these DataFrames.
     """
-    layout = go.Layout(legend=dict(orientation='h', yanchor='top', xanchor='center', y=-0.2, x=0.5))
-    fig = FigureResampler(go.Figure(layout=layout))
-    fig = go.Figure(layout=layout)
 
     def __init__(self, file_path: str):
         """
         Initialize a regular Syngistix file or Nanomodul file (set nanomodul == True).
         """
-        self.file_name = file_path.split("/")[-1]
+        #self.file_name = file_path.split("/")[-1]
+        self.file_name = file_path.name
         self.__timescale_count = 0
         self.__nanomodul = check_nanomodul(file_path)
         if self.__nanomodul:
             self.data = pd.read_csv(file_path, skiprows=0).iloc[:, :-1]
             self.measured_isotopes = self.data.columns
         else:
-            self.data = pd.read_csv(file_path, skiprows=1)
+            self.data = pd.read_csv(file_path, skiprows=2)
             self.measured_isotopes = self.data.loc[:, self.data.columns != "Time in Seconds "].columns
         self.peaks = dict()
         for isotope in self.measured_isotopes:
-            self.peaks[isotope] = pd.DataFrame(columns=['index', 'time', 'counts', 'width', 'background', 'area'])
+            self.peaks[isotope] = pd.DataFrame(columns=['index', 'time', 'height', 'width', 'background', 'area'])
 
     def timescale(self, isotope: str, cycle_time: float = False):
         """
@@ -205,7 +201,7 @@ class SinglePulse:
             intbound_right_idx = int((peak_time + peak_width * self.__intfactor * asymmetry) / self.__cycle_time)
 
             if local_background:
-                assert peak_time.empty is False and not peak_background.isna().all(), f"Calculate local background before integration or set local_background = False!"
+                #assert peak_time.empty is False and not peak_background.isna().all(), f"Calculate local background before integration or set local_background = False!"
                 signal = [k - self.peaks[isotope]['background'][i] for k in self.data[isotope][intbound_left_idx:intbound_right_idx]]
             else:
                 signal = [k - self.global_background(isotope, start=0.1, end=1) for k in self.data[isotope][intbound_left_idx:intbound_right_idx]]
@@ -220,17 +216,15 @@ class SinglePulse:
 
     def calibrate(self, isotope, calibration: object):
         """
-        Uses FilmCalibration object to append 'mass' column to the peaks dataframe.
+        Uses a Calibration object to append 'mass' column to the peaks dataframe.
         """
         self.peaks[isotope]['mass'] = (self.peaks[isotope]['area'] - calibration.calibration[isotope].intercept) / calibration.calibration[isotope].slope
         return True
 
-    
-
 
     def area_ratio(self, isotope_one: str, gravfac_one: float, isotope_two: str, gravfac_two: float):
         """
-        Calculate the area ratio between two isotopes - for every particle separately. 
+        Calculate the area ratio between two isotopes - for every peak separately. 
         This is achieved by looking at every peak of the large area isotope and checking if there was an adjacent smaller area peak found. 
         If yes, the ratio is calculated and stored in self.__ratios. 
         :param isotope_one: The isotope with the supposed larger area.
@@ -256,55 +250,14 @@ class SinglePulse:
         ratio_stdev = np.std(ratios)
 
         return (ratios, ratio_mean, ratio_stdev)
-
-
-
-    def gdc_diameter(self, isotope, mode, mass_correction):
-        # mass fractions of one particle
-        #gadolinium = 0.17997880
-        #cerium = 0.64147307
-        #oxygen = 0.17854813
-
-        if mode == '1':
-            gadolinium = 0.149569
-            cerium = 0.675891
-            oxygen = 0.174565
-        if mode == '10':
-            gadolinium = 0.124
-            cerium = 0.699
-            oxygen = 0.176
-        if mode == '100':
-            gadolinium = 0.098053
-            cerium = 0.725061
-            oxygen = 0.1768607
-
-        if isotope == 'CeO/156':
-            diameter = [calc_diameter((m * 140 / 156) / cerium, 7.32, mass_correction=mass_correction) for m in self.peaks[isotope]['mass']]
-            self.peaks[isotope]['diameter'] = diameter
-        if isotope == 'GdO/174':
-            diameter = [calc_diameter((m * 158 / 174) / gadolinium, 7.32, mass_correction=mass_correction) for m in self.peaks[isotope]['mass']]
-            self.peaks[isotope]['diameter'] = diameter
-
-    def gdc_diameter_new(self, isotope, mass_correction, ce_molfrac):
-        oxygen_content = 1.95 / (0.2 * ce_molfrac + 0.1 * 1.5)
-        empiric_gdc = 0.1 * ce_molfrac * oxygen_content, 0.1 * oxygen_content, oxygen_content
-        print(empiric_gdc)
-        """
-        if isotope == 'CeO/156':
-            diameter = [calc_diameter((m * 140 / 156) / cerium, 7.32, mass_correction=mass_correction) for m in self.peaks[isotope]['mass']]
-            self.peaks[isotope]['diameter'] = diameter
-        if isotope == 'GdO/174':
-            diameter = [calc_diameter((m * 158 / 174) / gadolinium, 7.32, mass_correction=mass_correction) for m in self.peaks[isotope]['mass']]
-            self.peaks[isotope]['diameter'] = diameter
-        """
-
-    def plot(self, isotope: str, savgol: bool = False, integration: bool = False, peaks: bool = False, background: bool = False, width: bool = False):
+    
+    def plot(self, isotope: str, fig: object, savgol: bool = False, integration: bool = False, peaks: bool = False, background: bool = False, width: bool = False):
         """
         Plot the data and optional elements such as integration boundaries or local background.
         """
 
-        SinglePulse.fig.update_layout(height=800, xaxis_title="Time (s)", yaxis_title="Intensity")
-        SinglePulse.fig.update_traces(line_width=1, selector=dict(type='scatter'), showlegend=True)
+        fig.update_layout(height=800, xaxis_title="Time (s)", yaxis_title="Intensity")
+        fig.update_traces(line_width=1, selector=dict(type='scatter'), showlegend=True)
 
         traces = []
         shapes = []
@@ -318,11 +271,14 @@ class SinglePulse:
             savgol_trace = go.Scatter(line=dict(width=1.5), x=self.data[f"{isotope}_time"], y=self.data[f"{isotope}_savgol"], mode='lines', name=f"'{self.file_name}' ({isotope}_savgol)")
             traces.append(savgol_trace)
 
-        peak_index = self.peaks[isotope]['index']
-        peak_time = self.peaks[isotope]['time']
-        peak_height = self.peaks[isotope]['height']
-        peak_width = self.peaks[isotope]['width']
-        peak_background = self.peaks[isotope]['background']
+        try:
+            peak_index = self.peaks[isotope]['index']
+            peak_time = self.peaks[isotope]['time']
+            peak_height = self.peaks[isotope]['height']
+            peak_width = self.peaks[isotope]['width']
+            peak_background = self.peaks[isotope]['background']
+        except:
+            pass
 
         if peaks:
             peak_trace = go.Scatter(x=peak_time, y=peak_height, mode='markers', marker_color="red", name=f"{isotope} peaks ({self.file_name})")
@@ -361,16 +317,17 @@ class SinglePulse:
                 shapes.append(width_shape)
 
         for trace in traces:
-            SinglePulse.fig.add_trace(trace)
+            fig.add_trace(trace)
         for shape in shapes:
-            SinglePulse.fig.add_shape(shape)
+            fig.add_shape(shape)
 
 
-class FilmCalibration:
+class Calibration:
     """
-    Uses SinglePulse Objects for calibration. Spotsizes: x and y in micrometers, z in nanometers.
+    Uses Measurement Objects for calibration. Spotsizes are either tuples (x, y, z) or (d, z), where x, y and d are in micrometers and z in nanometers.
     """
-    def __init__(self, standards: list, spotsizes: list[tuple], film_concentration_percent: float):
+
+    def __init__(self, standards: list[tuple], spotsizes: list[tuple], film_concentration_percent: float):
         self.__standards = standards
         self.__spotsizes = spotsizes
         self.__film_concentration_percent = film_concentration_percent
@@ -378,19 +335,41 @@ class FilmCalibration:
         self.analyte_mass = dict()
         self.analyte_intensity = dict()
 
+    def merge_peak_df(self, measurements: list, isotope: str):
+        """Takes a list of Measurement objects and merges the peaks dataframe of the given isotope."""
+        df_list = []
+        for m in measurements:
+            df_list.append(m.peaks[isotope])
+        df_merged = pd.concat(df_list, axis=0, ignore_index=True)
+        return df_merged
+
     def reg_function(self, isotope: str, analyte_ppm_film: float = 0, force_zero: bool = False, mass_correction: float = 1):
         self.analyte_mass[isotope] = []
         self.analyte_intensity[isotope] = []
+
         if force_zero:
             self.analyte_mass[isotope].append(0)
             self.analyte_intensity[isotope].append(0)
-        for x, y, z in self.__spotsizes:
-            ablated_drymass = (z * 1e-7 * x * y * 1e-8) * (self.__film_concentration_percent / 100) * mass_correction
-            if analyte_ppm_film != 0:
-                ablated_drymass = ablated_drymass * analyte_ppm_film * 1e-6
-            self.analyte_mass[isotope].append(ablated_drymass)
+
+        if len(self.__spotsizes[0]) == 3:
+            for x, y, z in self.__spotsizes:
+                ablated_drymass = (z * 1e-7 * x * y * 1e-8) * (self.__film_concentration_percent / 100) * mass_correction
+                if analyte_ppm_film != 0:
+                    ablated_drymass = ablated_drymass * analyte_ppm_film * 1e-6
+                self.analyte_mass[isotope].append(ablated_drymass)
+
+        elif len(self.__spotsizes[0]) == 2:
+            for d, z in self.__spotsizes:
+                ablated_drymass = (z * 1e-7 * (d/2)**2 * math.pi * 1e-8) * (self.__film_concentration_percent / 100) * mass_correction
+                if analyte_ppm_film != 0:
+                    ablated_drymass = ablated_drymass * analyte_ppm_film * 1e-6
+                self.analyte_mass[isotope].append(ablated_drymass)
+
         for s in self.__standards:
-            self.analyte_intensity[isotope].append(s.peaks[isotope]['area'].mean())
+            merged_df = self.merge_peak_df(measurements = list(s), isotope = isotope)
+            self.analyte_intensity[isotope].append(merged_df['area'].mean())
+            #self.analyte_intensity[isotope].append(s.peaks[isotope]['area'].mean())
+
         self.analyte_intensity[isotope] = [float(i) for i in self.analyte_intensity[isotope]]
         self.calibration[isotope] = sc.stats.linregress(x=self.analyte_mass[isotope], y=self.analyte_intensity[isotope])
 
@@ -398,8 +377,113 @@ class FilmCalibration:
 
         return self.calibration[isotope]
 
+    def reg_plot_2(self, isotope: str, confidence_interval: int = 90):
+        x = self.analyte_mass[isotope]
+        y = self.analyte_intensity[isotope]
+        plt.figure()
+        plt.scatter(x, y, label='Data')
+        # Fit line
+        slope, intercept = np.polyfit(x, y, 1)
+        x_fit = np.linspace(min(x), max(x), 100)
+        y_fit = slope * x_fit + intercept
+        # Calculate R^2
+        y_pred = slope * np.array(x) + intercept
+        ss_res = np.sum((y - y_pred) ** 2)
+        ss_tot = np.sum((y - np.mean(y)) ** 2)
+        r2 = 1 - ss_res / ss_tot if ss_tot != 0 else 0
+        eqn_label = f'Fit: y = {intercept:.2e} + {slope:.2e}x\n$R^2$ = {r2:.3f}'
+        plt.plot(x_fit, y_fit, color='red', label=eqn_label)
+        plt.xlabel(f'{isotope} mass (g)')
+        plt.ylabel('Intensity')
+        plt.legend()
+        plt.grid(visible=True, which='both', linestyle='--', linewidth=0.5, alpha=0.7)
+        plt.show()
+
     def reg_plot(self, isotope: str, confidence_interval: int = 90):
         sns.regplot(x=self.analyte_mass[isotope], y=self.analyte_intensity[isotope], ci=confidence_interval)
+
+
+
+class GDCParticles:
+    def __init__(self, measurement: Measurement, ce_isotope: str = "CeO/156", gd_isotope: str = "GdO/174", time_window: float = 0.1):
+        self.__measurement = measurement
+        self.__ce_isotope = ce_isotope
+        self.__gd_isotope = gd_isotope
+
+        ce_df = measurement.peaks[ce_isotope][["time", "area"]].copy()
+        ce_df["isotope"] = ce_isotope
+        gd_df = measurement.peaks[gd_isotope][["time", "area"]].copy()
+        gd_df["isotope"] = gd_isotope
+
+        ce_df = ce_df.reset_index(drop=True)
+        gd_df = gd_df.reset_index(drop=True)
+
+        # we need to ensure that only entries are copied where both Ce and Gd are found:
+        pairs = []
+        for _, ce_row in ce_df.iterrows():
+            gd_candidates = gd_df[np.abs(gd_df["time"] - ce_row["time"]) <= time_window]
+            
+            if not gd_candidates.empty:
+                gd_row = gd_candidates.iloc[(np.abs(gd_candidates["time"] - ce_row["time"])).argmin()]
+                if not pd.isna(ce_row["time"]) and not pd.isna(gd_row["time"]):
+                    pairs.append({
+                        "ce_time": ce_row["time"],
+                        "ce_area": ce_row["area"],
+                        "gd_time": gd_row["time"],
+                        "gd_area": gd_row["area"]
+                    })
+        pairs = [p for p in pairs if all(pd.notna([p["ce_time"], p["gd_time"]]))]
+        self.particles = pd.DataFrame(pairs)
+
+    def constituent_mass(self, calibration: Calibration):
+        """
+        Uses a Calibration object to append 'mass' column to the particles dataframe.
+        """
+        y_ce = self.particles['ce_area']
+        d_ce = calibration.calibration[self.__ce_isotope].intercept
+        k_ce = calibration.calibration[self.__ce_isotope].slope
+        self.particles['ce_mass'] = (y_ce - d_ce) / k_ce
+
+        y_gd = self.particles['gd_area']
+        d_gd = calibration.calibration[self.__gd_isotope].intercept
+        k_gd = calibration.calibration[self.__gd_isotope].slope
+        self.particles['gd_mass'] = (y_gd - d_gd) / k_gd
+        return True
+    
+    def particle_mass(self, mw_ce, mw_gd):
+        """
+        Computes the mass of the GDC particles from the constituent masses.
+        In this calculation, oxygen is also considered.
+        """
+        mw_o = 16.0
+        m_ce = self.particles['ce_mass']
+        m_gd = self.particles['gd_mass']
+        n_ce = m_ce / mw_ce
+        n_gd = m_gd / mw_gd
+        x = n_gd / (n_ce + n_gd)
+        n_ce_formula = 1 - x
+        n_gd_formula = x
+        n_o_formula = 2 * (n_ce_formula + n_gd_formula) - 0.5 * x
+        o_ratio = n_o_formula / (n_ce_formula + n_gd_formula)
+        n_o = (n_ce + n_gd) * o_ratio
+        m_o = n_o * mw_o
+        self.particles['mass'] = m_ce + m_gd + m_o
+        return True
+
+    def particle_diameter(self, density: float = 7.32):
+        """
+        Computes the diameter of the GDC particles from the mass and density
+        :param density: Density of the GDC particles in g/cm^3
+        :return: Diameter in nm
+        """
+        rho = density
+        m = self.particles['mass']
+        d = (6 * m / (rho * np.pi)) ** (1/3) * 1e7
+        self.particles['diameter'] = d
+        return True
+    
+
+
 
 """
 aft_values = [-150, 0, 50, 150, 350, 500]
