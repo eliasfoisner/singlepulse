@@ -8,9 +8,6 @@ import plotly.graph_objects as go
 import math
 
 
-
-
-
 def extract_string(text: str, first_character: str, second_character: str, right: bool = True):
     """
     Looks for the index of "first_character" in the string "text" and looks for the index of the first occurence of "second_character" relative to it.
@@ -256,7 +253,7 @@ class Measurement:
         Plot the data and optional elements such as integration boundaries or local background.
         """
 
-        fig.update_layout(height=800, xaxis_title="Time (s)", yaxis_title="Intensity")
+        fig.update_layout(height=900, xaxis_title="Time (s)", yaxis_title="Intensity")
         fig.update_traces(line_width=1, selector=dict(type='scatter'), showlegend=True)
 
         traces = []
@@ -377,6 +374,7 @@ class Calibration:
 
         return self.calibration[isotope]
 
+
     def reg_plot_2(self, isotope: str, confidence_interval: int = 90):
         x = self.analyte_mass[isotope]
         y = self.analyte_intensity[isotope]
@@ -395,6 +393,8 @@ class Calibration:
         plt.plot(x_fit, y_fit, color='red', label=eqn_label)
         plt.xlabel(f'{isotope} mass (g)')
         plt.ylabel('Intensity')
+        plt.xlim([0, max(x) * 1.1])
+        plt.ylim([0, max(y) * 1.1])
         plt.legend()
         plt.grid(visible=True, which='both', linestyle='--', linewidth=0.5, alpha=0.7)
         plt.show()
