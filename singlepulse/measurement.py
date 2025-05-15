@@ -5,7 +5,7 @@ import scipy as sc
 import plotly.graph_objects as go
 
 
-class Measurement:
+class SyngistixMeasurement:
     """
     The basic concept evolves around two DataFrames self.data and self.peaks which are filled with data when applying methods.
     Methods return the specific calculations in addition to saving the data to these DataFrames.

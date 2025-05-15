@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import math
 
 
-class Calibration:
+class SyngistixCalibration:
     """
     Uses Measurement Objects for calibration. Spotsizes are either tuples (x, y, z) or (d, z), where x, y and d are in micrometers and z in nanometers.
     """
